@@ -43,7 +43,9 @@
 
 /* Private variables ---------------------------------------------------------*/
 I2S_HandleTypeDef hi2s2;
+I2S_HandleTypeDef hi2s3;
 DMA_HandleTypeDef hdma_spi2_tx;
+DMA_HandleTypeDef hdma_spi3_rx;
 
 /* USER CODE BEGIN PV */
 #define PI 3.14159f
@@ -58,6 +60,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_I2S2_Init(void);
+static void MX_I2S3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -70,6 +73,8 @@ uint16_t sample_N;
 uint16_t i_t;
 
 int32_t dataI2S[4400];
+int32_t dataI2Sin[256];
+int32_t dataI2Sout[256];
 /* USER CODE END 0 */
 
 /**
@@ -104,17 +109,25 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_I2S2_Init();
+  MX_I2S3_Init();
   /* USER CODE BEGIN 2 */
 
   //Build Sine wave
-  for (uint16_t i=0; i<sample_N; i++) {
-  	mySinVal = sinf(i*2*PI*sample_dt);
-  	dataI2S[i*2] = (mySinVal)*8388607;    //left data (L WS) (0 2 4 6 8 10 12)
-  	dataI2S[i*2 + 1] = (mySinVal + 1)*4194303; //Right data (H WS)  (1 3 5 7 9 11 13)
-  	dataI2S[i*2] = ((dataI2S[i*2] & 0x00FFFF00) >> 8) | ((dataI2S[i*2] & 0xFF) << 24);
-  	dataI2S[i*2 + 1] = ((dataI2S[i*2 + 1] & 0x00FFFF00) >> 8) | ((dataI2S[i*2 + 1] & 0xFF) << 24);
-  }
-  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)dataI2S, sample_N*2);
+//  for (uint16_t i=0; i<sample_N; i++) {
+//  	mySinVal = sinf(i*2*PI*sample_dt);
+//  	dataI2S[i*2] = (mySinVal)*8388607;    //left data (L WS) (0 2 4 6 8 10 12)
+//  	dataI2S[i*2 + 1] = (mySinVal + 1)*4194303; //Right data (H WS)  (1 3 5 7 9 11 13)
+//  	dataI2S[i*2] = ((dataI2S[i*2] & 0x00FFFF00) >> 8) | ((dataI2S[i*2] & 0xFF) << 24);
+//  	dataI2S[i*2 + 1] = ((dataI2S[i*2 + 1] & 0x00FFFF00) >> 8) | ((dataI2S[i*2 + 1] & 0xFF) << 24);
+//  }
+//  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)dataI2S, sample_N*2);
+
+  HAL_Delay(500);
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_5, GPIO_PIN_SET);
+
+  HAL_I2S_Receive_DMA(&hi2s3, (uint16_t *)dataI2Sin, 256);
+
+  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)dataI2Sout, 256);
 
   /* USER CODE END 2 */
 
@@ -214,6 +227,40 @@ static void MX_I2S2_Init(void)
 
 }
 
+/**
+  * @brief I2S3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2S3_Init(void)
+{
+
+  /* USER CODE BEGIN I2S3_Init 0 */
+
+  /* USER CODE END I2S3_Init 0 */
+
+  /* USER CODE BEGIN I2S3_Init 1 */
+
+  /* USER CODE END I2S3_Init 1 */
+  hi2s3.Instance = SPI3;
+  hi2s3.Init.Mode = I2S_MODE_MASTER_RX;
+  hi2s3.Init.Standard = I2S_STANDARD_PHILIPS;
+  hi2s3.Init.DataFormat = I2S_DATAFORMAT_24B;
+  hi2s3.Init.MCLKOutput = I2S_MCLKOUTPUT_ENABLE;
+  hi2s3.Init.AudioFreq = I2S_AUDIOFREQ_44K;
+  hi2s3.Init.CPOL = I2S_CPOL_LOW;
+  hi2s3.Init.ClockSource = I2S_CLOCK_PLL;
+  hi2s3.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
+  if (HAL_I2S_Init(&hi2s3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2S3_Init 2 */
+
+  /* USER CODE END I2S3_Init 2 */
+
+}
+
 /** 
   * Enable DMA controller clock
   */
@@ -224,6 +271,9 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
   /* DMA1_Stream4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
@@ -237,14 +287,40 @@ static void MX_DMA_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_5, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PE5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s)
+{
+  /* Prevent unused argument(s) compilation warning */
+  UNUSED(hi2s);
+
+  /* NOTE : This function Should not be modified, when the callback is needed,
+            the HAL_I2S_RxCpltCallback could be implemented in the user file
+   */
+  for (int i = 0; i < sizeof(dataI2Sin)/sizeof(dataI2Sin[0]); i++) {
+	  dataI2Sout[i] = dataI2Sin[i];
+  }
+}
 
 /* USER CODE END 4 */
 
