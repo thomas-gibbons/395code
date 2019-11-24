@@ -52,7 +52,7 @@ DMA_HandleTypeDef hdma_spi3_rx;
 
 //Sample rate and Output freq
 #define F_SAMPLE		44000.0f
-#define F_OUT			1000.0f
+#define F_OUT			8000.0f
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -113,21 +113,20 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   //Build Sine wave
-//  for (uint16_t i=0; i<sample_N; i++) {
-//  	mySinVal = sinf(i*2*PI*sample_dt);
-//  	dataI2S[i*2] = (mySinVal)*8388607;    //left data (L WS) (0 2 4 6 8 10 12)
-//  	dataI2S[i*2 + 1] = (mySinVal + 1)*4194303; //Right data (H WS)  (1 3 5 7 9 11 13)
-//  	dataI2S[i*2] = ((dataI2S[i*2] & 0x00FFFF00) >> 8) | ((dataI2S[i*2] & 0xFF) << 24);
-//  	dataI2S[i*2 + 1] = ((dataI2S[i*2 + 1] & 0x00FFFF00) >> 8) | ((dataI2S[i*2 + 1] & 0xFF) << 24);
-//  }
-//  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)dataI2S, sample_N*2);
+  for (uint16_t i=0; i<sample_N; i++) {
+  	mySinVal = sinf(i*2*PI*sample_dt);
+  	dataI2S[i*2] = (mySinVal)*1048575;    //left data (L WS) (0 2 4 6 8 10 12)
+  	dataI2S[i*2 + 1] = (mySinVal)*1048575; //Right data (H WS)  (1 3 5 7 9 11 13)
+  	dataI2S[i*2] = ((dataI2S[i*2] & 0x00FFFF00) >> 8) | ((dataI2S[i*2] & 0xFF) << 24);
+  	dataI2S[i*2 + 1] = ((dataI2S[i*2 + 1] & 0x00FFFF00) >> 8) | ((dataI2S[i*2 + 1] & 0xFF) << 24);
+  }
+  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)dataI2S, sample_N*2);
 
-  HAL_Delay(500);
-  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_5, GPIO_PIN_SET);
-
-  HAL_I2S_Receive_DMA(&hi2s3, (uint16_t *)dataI2Sin, 256);
-
-  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)dataI2Sout, 256);
+//  HAL_Delay(500);
+//  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_5, GPIO_PIN_SET);
+//
+//  HAL_I2S_Receive_DMA(&hi2s3, (uint16_t *)dataI2Sin, 256);
+//  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)dataI2Sout, 256);
 
   /* USER CODE END 2 */
 
@@ -158,14 +157,13 @@ void SystemClock_Config(void)
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
   /** Initializes the CPU, AHB and APB busses clocks 
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 8;
-  RCC_OscInitStruct.PLL.PLLN = 50;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 4;
+  RCC_OscInitStruct.PLL.PLLN = 168;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -177,15 +175,15 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV8;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
     Error_Handler();
   }
   PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
-  PeriphClkInitStruct.PLLI2S.PLLI2SN = 192;
+  PeriphClkInitStruct.PLLI2S.PLLI2SN = 50;
   PeriphClkInitStruct.PLLI2S.PLLI2SR = 2;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
@@ -291,6 +289,7 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
@@ -318,6 +317,7 @@ void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s)
             the HAL_I2S_RxCpltCallback could be implemented in the user file
    */
   for (int i = 0; i < sizeof(dataI2Sin)/sizeof(dataI2Sin[0]); i++) {
+//      dataI2Sout[i] = ((dataI2Sin[i] & 0x0000FFFF) << 8) | ((dataI2Sin[i] & 0xFF000000) >> 24);
 	  dataI2Sout[i] = dataI2Sin[i];
   }
 }
