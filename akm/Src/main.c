@@ -48,11 +48,7 @@ DMA_HandleTypeDef hdma_spi2_tx;
 DMA_HandleTypeDef hdma_spi3_rx;
 
 /* USER CODE BEGIN PV */
-#define PI 3.14159f
 
-//Sample rate and Output freq
-#define F_SAMPLE		44000.0f
-#define F_OUT			8000.0f
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,19 +58,27 @@ static void MX_DMA_Init(void);
 static void MX_I2S2_Init(void);
 static void MX_I2S3_Init(void);
 /* USER CODE BEGIN PFP */
-
+void process_buf(uint16_t offset);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#define PI 3.14159f
+
+//Sample rate and Output freq
+#define F_SAMPLE		44100.0f
+#define F_OUT			8000.0f
+
 float mySinVal;
 float sample_dt;
 uint16_t sample_N;
 uint16_t i_t;
-
 int32_t dataI2S[4400];
-int32_t dataI2Sin[256];
-int32_t dataI2Sout[256];
+
+#define ABUF_SIZE 256	// DMA seems to not transfer more than 256 bytes at a time
+int32_t ain[ABUF_SIZE];
+int32_t aout[ABUF_SIZE];
+
 /* USER CODE END 0 */
 
 /**
@@ -113,20 +117,20 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   //Build Sine wave
-  for (uint16_t i=0; i<sample_N; i++) {
-  	mySinVal = sinf(i*2*PI*sample_dt);
-  	dataI2S[i*2] = (mySinVal)*1048575;    //left data (L WS) (0 2 4 6 8 10 12)
-  	dataI2S[i*2 + 1] = (mySinVal)*1048575; //Right data (H WS)  (1 3 5 7 9 11 13)
-  	dataI2S[i*2] = ((dataI2S[i*2] & 0x00FFFF00) >> 8) | ((dataI2S[i*2] & 0xFF) << 24);
-  	dataI2S[i*2 + 1] = ((dataI2S[i*2 + 1] & 0x00FFFF00) >> 8) | ((dataI2S[i*2 + 1] & 0xFF) << 24);
-  }
-  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)dataI2S, sample_N*2);
+//  for (uint16_t i=0; i<sample_N; i++) {
+//  	mySinVal = sinf(i*2*PI*sample_dt);
+//  	dataI2S[i*2] = (mySinVal)*1048575;    //left data (L WS) (0 2 4 6 8 10 12)
+//  	dataI2S[i*2 + 1] = (mySinVal)*1048575; //Right data (H WS)  (1 3 5 7 9 11 13)
+//  	dataI2S[i*2] = ((dataI2S[i*2] & 0x00FFFF00) >> 8) | ((dataI2S[i*2] & 0xFF) << 24);
+//  	dataI2S[i*2 + 1] = ((dataI2S[i*2 + 1] & 0x00FFFF00) >> 8) | ((dataI2S[i*2 + 1] & 0xFF) << 24);
+//  }
+//  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)dataI2S, sample_N*2);
 
-//  HAL_Delay(500);
-//  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_5, GPIO_PIN_SET);
-//
-//  HAL_I2S_Receive_DMA(&hi2s3, (uint16_t *)dataI2Sin, 256);
-//  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)dataI2Sout, 256);
+  HAL_Delay(500);
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_5, GPIO_PIN_SET);
+
+  HAL_I2S_Receive_DMA(&hi2s3, (uint16_t *)ain, 256);
+  HAL_I2S_Transmit_DMA(&hi2s2, (uint16_t *)aout, 256);
 
   /* USER CODE END 2 */
 
@@ -157,11 +161,12 @@ void SystemClock_Config(void)
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
   /** Initializes the CPU, AHB and APB busses clocks 
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = 4;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 8;
   RCC_OscInitStruct.PLL.PLLN = 168;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
@@ -289,7 +294,6 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
@@ -308,6 +312,50 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+void process_audio() {
+//	float r  = 0.2;
+//	float f  = 1000;
+//
+//	float c = 1.0 / tan(PI * f / F_SAMPLE);
+//	float a1 = 1.0 / ( 1.0 + r * c + c * c);
+//	float a2 = 2* a1;
+//	float a3 = a1;
+//	float b1 = 2.0 * ( 1.0 - c*c) * a1;
+//	float b2 = ( 1.0 - r * c + c * c) * a1;
+//
+//	float prev1 = 0;
+//	float prev2 = 0;
+
+//	aout[i] = (a1 * aout[i]) + (a2 * aout[i-1]) + (a3 * aout[i-2]) - (b1*prev1) - (b2*prev2);
+//	prev1 = aout[i];
+//	prev2 = prev1;
+
+}
+
+void process_buf(uint16_t offset) {
+	for (uint16_t i = 0; i < ABUF_SIZE/2; i++) {
+		i+=offset;
+		aout[i] = ((ain[i] & 0x0000FFFF) << 8) | ((ain[i] & 0xFF000000) >> 24);
+		process_audio();
+		dataI2S[i] = aout[i];
+		aout[i] = ((aout[i] & 0x00FFFF00) >> 8) | ((aout[i] & 0xFF) << 24);
+		i-=offset;
+	}
+}
+
+void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
+{
+  /* Prevent unused argument(s) compilation warning */
+  UNUSED(hi2s);
+
+  /* NOTE : This function Should not be modified, when the callback is needed,
+            the HAL_I2S_RxCpltCallback could be implemented in the user file
+   */
+
+  process_buf(0);
+
+}
+
 void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s)
 {
   /* Prevent unused argument(s) compilation warning */
@@ -316,10 +364,9 @@ void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s)
   /* NOTE : This function Should not be modified, when the callback is needed,
             the HAL_I2S_RxCpltCallback could be implemented in the user file
    */
-  for (int i = 0; i < sizeof(dataI2Sin)/sizeof(dataI2Sin[0]); i++) {
-//      dataI2Sout[i] = ((dataI2Sin[i] & 0x0000FFFF) << 8) | ((dataI2Sin[i] & 0xFF000000) >> 24);
-	  dataI2Sout[i] = dataI2Sin[i];
-  }
+
+  process_buf(ABUF_SIZE/2);
+
 }
 
 /* USER CODE END 4 */
